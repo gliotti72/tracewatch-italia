@@ -1,5 +1,5 @@
 name: TraceWatch Italia
-version: "0.1.1"
+version: "0.1.2"
 slug: tracewatch_italia
 description: Monitoraggio traceroute e variazioni dei percorsi Internet
 arch:
@@ -14,14 +14,24 @@ ingress_port: 8099
 panel_icon: mdi:routes
 map:
   - addon_config:rw
+  - homeassistant_config:ro
 options:
   targets:
     - 1.1.1.1
     - 8.8.8.8
   interval_seconds: 300
   acquisition_minutes: 60
+  mikrotik_enabled: false
+  mikrotik_host: 10.2.30.254
+  mikrotik_port: 8729
+  mikrotik_username: tracewatch
 schema:
   targets:
     - str
   interval_seconds: int(30,86400)
   acquisition_minutes: int(1,1440)
+  mikrotik_enabled: bool
+  mikrotik_host: str
+  mikrotik_port: port
+  mikrotik_username: str
+  mikrotik_password: password?

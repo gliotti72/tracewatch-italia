@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse
+from mikrotik import poll as poll_mikrotik
 
 ROOT = Path('/config')
 ROOT.mkdir(parents=True, exist_ok=True)
@@ -11,6 +12,7 @@ STATE_FILE = ROOT / 'state.json'
 OPTIONS = Path('/data/options.json')
 lock = threading.RLock()
 wake = threading.Event()
+MIKROTIK_CA = "/homeassistant/certs/cert_export_tracewatch-ca.crt"
 
 def now(): return datetime.now(timezone.utc).isoformat()
 def load():
@@ -19,6 +21,7 @@ def load():
         except Exception: pass
     return {'mode':'idle','baseline':{},'samples':{},'events':[],'last':{},'started':None,'deadline':None,'ignored':[]}
 state = load()
+state.setdefault("mikrotik", {"enabled": False, "connected": False, "message": "Non configurato"})
 def save():
     tmp = STATE_FILE.with_suffix('.tmp')
     tmp.write_text(json.dumps(state, indent=2))
@@ -36,6 +39,32 @@ def trace(target):
             if m: hops.append(m.group(1))
         return {'time':now(),'hops':hops,'error':p.stderr.strip() if p.returncode and not hops else None}
     except Exception as e: return {'time':now(),'hops':[],'error':str(e)}
+
+def mikrotik_worker():
+    while True:
+        opts = options()
+        if not opts.get('mikrotik_enabled', False):
+            result = {'enabled': False, 'connected': False, 'message': 'Disabilitato'}
+        elif not opts.get('mikrotik_password'):
+            result = {'enabled': True, 'connected': False, 'message': 'Password non configurata'}
+        else:
+            try:
+                result = poll_mikrotik(
+                    opts.get('mikrotik_host', '10.2.30.254'),
+                    opts.get('mikrotik_port', 8729),
+                    opts.get('mikrotik_username', 'tracewatch'),
+                    opts['mikrotik_password'], MIKROTIK_CA)
+                result['enabled'] = True
+                result['time'] = now()
+                result['message'] = 'Connessione TLS verificata'
+            except Exception as exc:
+                # Do not log credentials or full exception contents.
+                result = {'enabled': True, 'connected': False, 'time': now(),
+                          'message': 'Connessione non riuscita (' + type(exc).__name__ + ')'}
+        with lock:
+            state['mikrotik'] = result
+            save()
+        time.sleep(60)
 
 def signature(hops): return '|'.join(hops)
 def worker():
@@ -100,7 +129,8 @@ class Handler(BaseHTTPRequestHandler):
             save();wake.set();self.send(200,json.dumps({'mode':state['mode']}))
     def log_message(self,*args): pass
 
-PAGE='''<!doctype html><html lang="it"><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><title>TraceWatch Italia</title><style>body{font:16px system-ui;margin:24px auto;padding:0 16px;max-width:900px;background:#101923;color:#edf3fa}button{padding:12px;margin:5px;border:0;border-radius:8px;background:#42a5f5;color:#071522;cursor:pointer}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#1b2938;padding:15px;border-radius:8px}h1{font-size:25px}.muted{color:#aebfd0}</style><h1>TraceWatch Italia</h1><p class="muted">Monitoraggio percorsi Internet · Nessun blocco firewall attivo</p><button onclick="act('start')">Avvia / Riacquisisci</button><button onclick="act('stop')">Stop acquisizione</button><button onclick="act('pause')">Pausa sorveglianza</button><button onclick="act('resume')">Riprendi</button><h2>Stato e percorsi</h2><pre id="status">Caricamento…</pre><h2>Ultimi eventi</h2><pre id="events"></pre><script>async function act(a){await fetch('api/'+a,{method:'POST'});await refresh()}async function refresh(){try{let s=await(await fetch('api/status')).json();document.getElementById('status').textContent=JSON.stringify({modalita:s.mode,acquisizione_avviata:s.started,percorsi_originali:s.baseline,ultimi_traceroute:s.last},null,2);document.getElementById('events').textContent=JSON.stringify(s.events.slice(-20).reverse(),null,2)}catch(e){document.getElementById('status').textContent=String(e)}}refresh();setInterval(refresh,10000)</script></html>'''
+PAGE='''<!doctype html><html lang="it"><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><title>TraceWatch Italia</title><style>body{font:16px system-ui;margin:24px auto;padding:0 16px;max-width:900px;background:#101923;color:#edf3fa}button{padding:12px;margin:5px;border:0;border-radius:8px;background:#42a5f5;color:#071522;cursor:pointer}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#1b2938;padding:15px;border-radius:8px}h1{font-size:25px}.muted{color:#aebfd0}</style><h1>TraceWatch Italia</h1><p class="muted">Monitoraggio percorsi Internet · Nessun blocco firewall attivo</p><button onclick="act('start')">Avvia / Riacquisisci</button><button onclick="act('stop')">Stop acquisizione</button><button onclick="act('pause')">Pausa sorveglianza</button><button onclick="act('resume')">Riprendi</button><h2>Stato e percorsi</h2><pre id="status">Caricamento…</pre><h2>Ultimi eventi</h2><pre id="events"></pre><script>async function act(a){await fetch('api/'+a,{method:'POST'});await refresh()}async function refresh(){try{let s=await(await fetch('api/status')).json();document.getElementById('status').textContent=JSON.stringify({modalita:s.mode,acquisizione_avviata:s.started,percorsi_originali:s.baseline,ultimi_traceroute:s.last,mikrotik:s.mikrotik},null,2);document.getElementById('events').textContent=JSON.stringify(s.events.slice(-20).reverse(),null,2)}catch(e){document.getElementById('status').textContent=String(e)}}refresh();setInterval(refresh,10000)</script></html>'''
 
 threading.Thread(target=worker,daemon=True).start()
+threading.Thread(target=mikrotik_worker,daemon=True).start()
 ThreadingHTTPServer(('0.0.0.0',8099),Handler).serve_forever()
