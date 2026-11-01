@@ -1,4 +1,4 @@
-# TraceWatch Italia 0.1.0
+# TraceWatch Italia 0.1.1
 
 Prototipo add-on locale per Home Assistant OS (Raspberry Pi 4 aarch64).
 
@@ -19,3 +19,8 @@ Per installarlo, pubblicare la cartella `tracewatch_repo` in un repository GitHu
 - Gli hop che non rispondono possono produrre falsi positivi.
 - La sorveglianza rileva ogni percorso non incluso nei campioni di acquisizione; può generare più eventi ripetuti.
 - Non è stato ancora collaudato su un Raspberry reale; usare inizialmente per osservazione.
+
+## Correzioni 0.1.1
+- Risveglio immediato del worker ai comandi della dashboard.
+- Stato `paused` distinto da `idle`.
+- Messaggi diagnostici per ogni traceroute nel registro.
