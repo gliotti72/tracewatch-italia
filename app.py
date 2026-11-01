@@ -60,7 +60,7 @@ def mikrotik_worker():
             except Exception as exc:
                 # Do not log credentials or full exception contents.
                 result = {'enabled': True, 'connected': False, 'time': now(),
-                          'message': 'Connessione non riuscita (' + type(exc).__name__ + ')'}
+                          'message': 'Connessione non riuscita (' + type(exc).__name__ + ': ' + str(exc) + ')'}
         with lock:
             state['mikrotik'] = result
             save()
